@@ -53,8 +53,13 @@ env:
 
 
 
-
-
+steps:
+  -task: UsePythonVersion@1
+    input: 
+      versionSpec: '3.14'
+  -script: pip install -r requirements.txt 
+  displayName: Installing modules
+      
 
 
 
