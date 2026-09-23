@@ -42,14 +42,14 @@ jobs:
       - name: Run unittest tests
         run: |
           python -m unittest discover \
-          -s testing
-          -p "*_unit_test.py"\
+          -s testing \
+          -p "*_unit_test.py" \
           -v
           
       - name: Run pytest tests
         run: |
-          python -m pytest testing\
-          "*_unit_test.py" \
+          python -m pytest testing \
+          --ignore-glob="*_unit_test.py" \
           -v
         
     
