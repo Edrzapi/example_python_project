@@ -1,5 +1,5 @@
 
-from main.class_file import Calculator
+from src.class_file import Calculator
 
 import unittest
 

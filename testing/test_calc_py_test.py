@@ -1,5 +1,5 @@
 import pytest
-from main.class_file import Calculator
+from src.class_file import Calculator
 
 
 @pytest.fixture

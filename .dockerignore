@@ -1,0 +1,24 @@
+# Docker sends the whole build context to the daemon before the build starts,
+# and "COPY . ." puts whatever survives this file into the image.
+# Docker does NOT read .gitignore. This file is separate and has to repeat it.
+
+.venv/                  # the virtualenv. The image builds its own from requirements.txt
+.git/                   # the entire history, usually the largest thing in a repo
+__pycache__/            # compiled bytecode, rebuilt inside the image anyway
+*.pyc
+.pytest_cache/          # local test cache, meaningless in the image
+.idea/                  # PyCharm settings
+.vscode/
+
+data/processed/         # pipeline OUTPUT. The image regenerates it; shipping it
+                        # would bake yesterday's results into the image.
+
+.env                    # secrets are passed at run time with -e or --env-file,
+                        # never built into a layer, where they persist in history
+
+*.md                    # docs do not change what the application does
+.github/                # CI config runs on the runner, not inside the image
+
+# NOT ignored, deliberately:
+#   data/*.csv    the INPUT data, or the pipeline has nothing to read
+#   requirements.txt, src/, testing/   the application and its tests
