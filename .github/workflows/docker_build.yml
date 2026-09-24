@@ -1,0 +1,105 @@
+name: Eds Docker Build and Push
+
+# --------------------------------------------------
+# WHEN THE WORKFLOW RUNS
+# Waits for the CI job, so an image is only ever built
+# from code that passed its tests.
+# --------------------------------------------------
+
+on:
+  workflow_run:
+    workflows: ["Eds CI Job"]      # must match the name: in testing_ci.yml exactly
+    types: [completed]
+    branches: ["main"]
+
+  workflow_dispatch:               # and a manual button in the Actions tab
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+
+# --------------------------------------------------
+# VARIABLES
+# vars.*    set in Settings > Secrets and variables > Actions > Variables
+#           visible in the log, fine for names
+# secrets.* set on the Secrets tab, masked in the log, never in this file
+# --------------------------------------------------
+
+env:
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  DOCKERHUB_USER: ${{ vars.DOCKERHUB_USERNAME }}
+
+
+jobs:
+
+  build:
+    name: Build, Test Run and Push
+    runs-on: ubuntu-latest
+
+    # Skip the build if CI failed. A manual run has no upstream result, so
+    # allow that through too.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # BUILD
+      # Two tags on one image: the commit sha, which is unique and
+      # traceable, and latest, which is convenient and lies.
+      # --------------------------------------------------
+      - name: Create Image
+        run: |
+          docker build \
+            --file docker/Dockerfile \
+            --tag $DOCKERHUB_USER/$IMAGE_NAME:${{ github.sha }} \
+            --tag $DOCKERHUB_USER/$IMAGE_NAME:latest \
+            .
+
+      # Prove it actually runs before it goes anywhere near a registry.
+      - name: Run Docker Image
+        run: |
+          docker run --rm \
+            $DOCKERHUB_USER/$IMAGE_NAME:${{ github.sha }}
+
+      # --------------------------------------------------
+      # PUSH TO DOCKER HUB
+      # Only from main, never from a pull request: a PR can come from a
+      # fork, and you do not hand registry credentials to a stranger.
+      # --------------------------------------------------
+      - name: Log in to Docker Hub
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}   # an ACCESS TOKEN, not your password
+
+      - name: Push Image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push $DOCKERHUB_USER/$IMAGE_NAME:${{ github.sha }}
+          docker push $DOCKERHUB_USER/$IMAGE_NAME:latest
+
+      # --------------------------------------------------
+      # ARTEFACT
+      # A copy of the image kept on the run itself, so you can download
+      # and load it even if the registry push was skipped.
+      # --------------------------------------------------
+      - name: Save Docker Image
+        run: |
+          docker save \
+            $DOCKERHUB_USER/$IMAGE_NAME:${{ github.sha }} \
+            --output $IMAGE_NAME.tar
+
+      - name: Upload Docker Image Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.IMAGE_NAME }}-${{ github.sha }}
+          path: ${{ env.IMAGE_NAME }}.tar
+          if-no-files-found: error

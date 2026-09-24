@@ -1,4 +1,4 @@
-name: Eds CI/CD Job
+name: Eds CI Job
 
 # --------------------------------------------------
 # WHEN THE WORKFLOW RUNS
@@ -24,18 +24,11 @@ concurrency:
   cancel-in-progress: true
 
 
-# --------------------------------------------------
-# GLOBAL VARIABLES
-# --------------------------------------------------
-
-env:
-  IMAGE_NAME: library-quality-analysis
-
-
 jobs:
 
   # ==================================================
   # TEST JOB
+  # Building the image lives in docker_build.yml
   # ==================================================
 
   test:
@@ -74,48 +67,3 @@ jobs:
           python -m pytest testing \
             --ignore-glob="*_unit_test.py" \
             -v
-
-
-  # ==================================================
-  # BUILD JOB
-  # Only runs if the test job succeeds
-  # ==================================================
-
-  build:
-    name: Building Docker Image
-    needs: test
-    runs-on: ubuntu-latest
-
-    steps:
-
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      # Build Docker image
-      - name: Create Image
-        run: |
-          docker build \
-            --file docker/Dockerfile \
-            --tag $IMAGE_NAME:${{ github.sha }} \
-            .
-
-      # Run Docker image
-      - name: Run Docker Image
-        run: |
-          docker run --rm \
-            $IMAGE_NAME:${{ github.sha }}
-
-      # Save Docker image as a .tar file
-      - name: Save Docker Image
-        run: |
-          docker save \
-            $IMAGE_NAME:${{ github.sha }} \
-            --output $IMAGE_NAME.tar
-
-      # Upload Docker image as a GitHub Actions artifact
-      - name: Upload Docker Image Artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ env.IMAGE_NAME }}-${{ github.sha }}
-          path: ${{ env.IMAGE_NAME }}.tar
-          if-no-files-found: error
