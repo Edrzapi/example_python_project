@@ -47,7 +47,6 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-
       # Setting up Python
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -55,13 +54,11 @@ jobs:
           python-version: "3.14"
           cache: "pip"
 
-
       # Install our dependencies
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-
 
       # Run unittest tests
       - name: Run unittest tests
@@ -70,7 +67,6 @@ jobs:
             -s testing \
             -p "*_unit_test.py" \
             -v
-
 
       # Run pytest tests
       - name: Run pytest tests
@@ -95,7 +91,6 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-
       # Build Docker image
       - name: Create Image
         run: |
@@ -104,13 +99,11 @@ jobs:
             --tag $IMAGE_NAME:${{ github.sha }} \
             .
 
-
       # Run Docker image
       - name: Run Docker Image
         run: |
           docker run --rm \
             $IMAGE_NAME:${{ github.sha }}
-
 
       # Save Docker image as a .tar file
       - name: Save Docker Image
@@ -118,7 +111,6 @@ jobs:
           docker save \
             $IMAGE_NAME:${{ github.sha }} \
             --output $IMAGE_NAME.tar
-
 
       # Upload Docker image as a GitHub Actions artifact
       - name: Upload Docker Image Artifact
