@@ -1,0 +1,105 @@
+name: Eds Docker Build (GitHub Container Registry)
+
+# --------------------------------------------------
+# EXAMPLE 1 of 2: pushing to GHCR, GitHub's own registry.
+#
+# The appeal is that there is NOTHING TO SET UP. Every run is handed a
+# GITHUB_TOKEN automatically, so there is no account to create, no token to
+# generate and no secret to store. The trade-off is that the image lives
+# with the repo: fine for a project like this, less useful if something
+# outside GitHub has to pull it.
+#
+# Compare with docker_build_dockerhub.yml, which does the same job against
+# Docker Hub and needs credentials.
+# --------------------------------------------------
+
+on:
+  workflow_run:
+    workflows: ["Eds CI Job"]      # must match the name: in testing_ci.yml exactly
+    types: [completed]
+    branches: ["main"]
+
+  workflow_dispatch:
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+
+# GITHUB_TOKEN is read-only by default. Publishing a package needs this.
+permissions:
+  contents: read
+  packages: write
+
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ vars.IMAGE_NAME || 'library-quality-analysis' }}
+
+
+jobs:
+
+  build:
+    name: Build, Test Run and Push to GHCR
+    runs-on: ubuntu-latest
+
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      # GHCR rejects any uppercase in an image path, and github.repository
+      # carries the owner's real capitalisation. Fold it to lowercase here
+      # rather than discovering it in a push error.
+      - name: Work out the image path
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_PATH=$REGISTRY/$OWNER/$IMAGE_NAME" >> $GITHUB_ENV
+          echo "Building $REGISTRY/$OWNER/$IMAGE_NAME"
+
+      - name: Create Image
+        run: |
+          docker build \
+            --file docker/Dockerfile \
+            --tag $IMAGE_PATH:${{ github.sha }} \
+            --tag $IMAGE_PATH:latest \
+            .
+
+      # Prove it runs before it goes anywhere near a registry.
+      - name: Run Docker Image
+        run: |
+          docker run --rm $IMAGE_PATH:${{ github.sha }}
+
+      # No secret of your own. GITHUB_TOKEN is minted for this run and dies
+      # with it, which is why this is the safer of the two examples.
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push $IMAGE_PATH:${{ github.sha }}
+          docker push $IMAGE_PATH:latest
+
+      # A copy on the run itself, so the image is downloadable even when the
+      # push was skipped. docker load < file.tar to use it.
+      - name: Save Docker Image
+        run: |
+          docker save $IMAGE_PATH:${{ github.sha }} --output $IMAGE_NAME.tar
+
+      - name: Upload Docker Image Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.IMAGE_NAME }}-${{ github.sha }}
+          path: ${{ env.IMAGE_NAME }}.tar
+          if-no-files-found: error

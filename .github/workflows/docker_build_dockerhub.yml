@@ -1,0 +1,109 @@
+name: Eds Docker Build (Docker Hub)
+
+# --------------------------------------------------
+# EXAMPLE 2 of 2: pushing to Docker Hub, a registry outside GitHub.
+#
+# The difference from the GHCR example is entirely about CREDENTIALS. GitHub
+# cannot mint a token for somebody else's service, so you supply one:
+#
+#   Settings > Secrets and variables > Actions
+#     Variables tab   DOCKERHUB_USERNAME   your Docker Hub username
+#                     IMAGE_NAME           optional, defaults below
+#     Secrets tab     DOCKERHUB_TOKEN      a Docker Hub ACCESS TOKEN
+#
+# Use an access token, not your account password. A token is scoped, expires,
+# and can be revoked on its own without locking you out of everything else.
+#
+# Variables are visible in the log, secrets are masked. Names go in Variables,
+# credentials go in Secrets. They are separate stores: a value saved as a
+# secret is NOT visible to vars.*, which is a common half-hour lost.
+# --------------------------------------------------
+
+on:
+  workflow_run:
+    workflows: ["Eds CI Job"]      # must match the name: in testing_ci.yml exactly
+    types: [completed]
+    branches: ["main"]
+
+  workflow_dispatch:
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+
+env:
+  # || supplies a fallback, so a missing variable cannot produce an empty tag.
+  IMAGE_NAME: ${{ vars.IMAGE_NAME || 'library-quality-analysis' }}
+  DOCKERHUB_USER: ${{ vars.DOCKERHUB_USERNAME }}
+
+
+jobs:
+
+  build:
+    name: Build, Test Run and Push to Docker Hub
+    runs-on: ubuntu-latest
+
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      # An unset variable is an EMPTY STRING, not an error. Without this the
+      # tag becomes "/:sha" and docker says "invalid reference format", which
+      # tells you nothing about the real cause. Fail early, and say why.
+      - name: Check the credentials are set
+        run: |
+          if [ -z "$DOCKERHUB_USER" ]; then
+            echo "::error::vars.DOCKERHUB_USERNAME is not set."
+            echo "Add it under Settings > Secrets and variables > Actions > VARIABLES."
+            echo "Note it is a variable, not a secret: vars.* cannot read secrets.*"
+            exit 1
+          fi
+          echo "Building $DOCKERHUB_USER/$IMAGE_NAME"
+
+      - name: Create Image
+        run: |
+          docker build \
+            --file docker/Dockerfile \
+            --tag $DOCKERHUB_USER/$IMAGE_NAME:${{ github.sha }} \
+            --tag $DOCKERHUB_USER/$IMAGE_NAME:latest \
+            .
+
+      # Prove it runs before it goes anywhere near a registry.
+      - name: Run Docker Image
+        run: |
+          docker run --rm $DOCKERHUB_USER/$IMAGE_NAME:${{ github.sha }}
+
+      # Main only. A pull request can come from a fork, and you do not hand
+      # registry credentials to a stranger's branch.
+      - name: Log in to Docker Hub
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push Image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push $DOCKERHUB_USER/$IMAGE_NAME:${{ github.sha }}
+          docker push $DOCKERHUB_USER/$IMAGE_NAME:latest
+
+      - name: Save Docker Image
+        run: |
+          docker save \
+            $DOCKERHUB_USER/$IMAGE_NAME:${{ github.sha }} \
+            --output $IMAGE_NAME.tar
+
+      - name: Upload Docker Image Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.IMAGE_NAME }}-${{ github.sha }}
+          path: ${{ env.IMAGE_NAME }}.tar
+          if-no-files-found: error
