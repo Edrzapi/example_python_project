@@ -100,7 +100,7 @@ jobs:
       - name: Create Image
         run: |
           docker build \
-            --file Dockerfile \
+            --file docker\Dockerfile \
             --tag $IMAGE_NAME:${{ github.sha }} \
             .
 
